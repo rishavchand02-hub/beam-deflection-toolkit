@@ -21,13 +21,6 @@ Inside the terminal, type python main.py
 
 4. The program calculates the deflection for the configured cases and saves the results in 'results.csv'.
 
-
-Running:
-
-1. Download or clone the repository.
-2. Open a terminal in the project directory.
-3. Run the program:
-
   Inside the terminal, type the command
    python main.py
 
@@ -54,6 +47,3 @@ Testing
 
 I tested the program with a missing configuration file, invalid JSON, and a negative Young's modulus to check its error handling. I also included checks against standard beam deflection formulas.
 
-Limitations.
-
-The program estimates maximum deflection by checking 101 positions along each beam. More testing is still needed for invalid inputs and independent verification of the off-centre point-load case.
