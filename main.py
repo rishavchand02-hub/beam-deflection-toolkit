@@ -35,6 +35,19 @@ def main():
         udl_loads = config["udl_loads"]
         fraction = config["off_center_fraction"]
         beam_cases = config["beam_cases"]
+        
+        if not spans:
+            raise ValueError("Spans cannot be empty")
+
+        if not point_loads:
+            raise ValueError("Point loads cannot be empty")
+
+        if not udl_loads:
+            raise ValueError("UDL loads cannot be empty")
+
+        if not beam_cases:
+            raise ValueError("Beam cases cannot be empty")
+        
 
         # 2. Check input values
         if E <= 0 or I <= 0:
