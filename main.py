@@ -1,8 +1,10 @@
 
-
 import json
-import csv
 import sys
+import os
+import numpy as np
+import pandas as pd
+from plot import create_plots
 
 from beams import (
     ss_center_point,
@@ -15,19 +17,15 @@ from beams import (
 
 def main():
     try:
-
-
+        # 1. Read configuration
         config_file = "config.json"
+
         if len(sys.argv) > 1:
-                config_file = sys.argv[1]
+            config_file = sys.argv[1]
 
         with open(config_file, "r") as file:
-                        
-                        config = json.load(file)
-            
-    
-    
-    
+            config = json.load(file)
+
         E = config["E"]
         I = config["I"]
         spans = config["spans"]
@@ -35,7 +33,8 @@ def main():
         udl_loads = config["udl_loads"]
         fraction = config["off_center_fraction"]
         beam_cases = config["beam_cases"]
-        
+
+        # 2. Validate inputs
         if not spans:
             raise ValueError("Spans cannot be empty")
 
@@ -47,9 +46,7 @@ def main():
 
         if not beam_cases:
             raise ValueError("Beam cases cannot be empty")
-        
 
-        # 2. Check input values
         if E <= 0 or I <= 0:
             raise ValueError("E and I must be positive")
 
@@ -68,7 +65,7 @@ def main():
         if not 0 < fraction < 1:
             raise ValueError("Off-center fraction must be between 0 and 1")
 
-        
+        # 3. Select beam functions
         beam_functions = {
             "ss_center_point": ss_center_point,
             "ss_off_center_point": ss_off_center_point,
@@ -81,183 +78,65 @@ def main():
             if name not in beam_functions:
                 raise ValueError("Unknown beam case: " + name)
 
-        results = []
-        checks = []
+        # 4. Create output folder
+        os.makedirs("outputs", exist_ok=True)
 
-        
+        # 5. Calculate deflections and save CSV files
         for name in beam_cases:
+
+            if name in ["ss_center_point", "ss_off_center_point",
+                        "cantilever_point"]:
+                loads = point_loads
+                unit = "N"
+            else:
+                loads = udl_loads
+                unit = "N/m"
+
+            rows = []
+
             for L in spans:
 
-                
-                if name in [
-                    "ss_center_point",
-                    "ss_off_center_point",
-                    "cantilever_point"
-                ]:
-                    loads = point_loads
-                    unit = "N"
-                else:
-                    loads = udl_loads
-                    unit = "N/m"
+                # Generate 101 positions
+                x = np.linspace(0, L, 101)
 
                 for load in loads:
-                    deflections = []
 
-                    
-                    for i in range(101):
-                        x = i * L / 100
-
-                        if name == "ss_off_center_point":
-                            y = ss_off_center_point(
-                                x, L, load, E, I, fraction * L
-                            )
-                        else:
-                            y = beam_functions[name](x, L, load, E, I)
-
-                        deflections.append(y)
-
-                    max_y = max(deflections)
-
-                    
-                    results.append({
-                        "beam_type": name,
-                        "span_m": L,
-                        "load_value": load,
-                        "load_unit": unit,
-                        "max_deflection_m": max_y
-                    })
-
-                    
-                    expected = None
-
-                    if name == "ss_center_point":
-                        expected = load * L**3 / (48 * E * I)
-
-                    elif name == "ss_udl":
-                        expected = 5 * load * L**4 / (384 * E * I)
-
-                    elif name == "cantilever_point":
-                        expected = load * L**3 / (3 * E * I)
-
-                    elif name == "cantilever_udl":
-                        expected = load * L**4 / (8 * E * I)
-
-                    if expected is not None:
-                        passed = abs(max_y - expected) <= 1e-9 * abs(expected)
-                        checks.append((name, passed))
-
-                    
-                    if name == "ss_center_point":
-                        left = ss_center_point(0, L, load, E, I)
-                        right = ss_center_point(L, L, load, E, I)
-
-                        checks.append((
-                            name + " boundaries",
-                            abs(left) < 1e-12 and abs(right) < 1e-12
-                        ))
-
-                    elif name == "ss_off_center_point":
-                        a = fraction * L
-
-                        left = ss_off_center_point(
-                            0, L, load, E, I, a
+                    # Calculate deflection using NumPy
+                    if name == "ss_off_center_point":
+                        y = beam_functions[name](
+                            x, L, load, E, I, fraction * L
                         )
-                        right = ss_off_center_point(
-                            L, L, load, E, I, a
+                    else:
+                        y = beam_functions[name](
+                            x, L, load, E, I
                         )
 
-                        checks.append((
-                            name + " boundaries",
-                            abs(left) < 1e-12 and abs(right) < 1e-12
-                        ))
+                    # Store results
+                    for i in range(len(x)):
+                        rows.append({
+                            "span_m": L,
+                            "load_value": load,
+                            "load_unit": unit,
+                            "position_m": x[i],
+                            "deflection_m": y[i]
+                        })
 
-                    
-                    if name == "ss_center_point":
-                        a = L / 2
+            # Create DataFrame
+            df = pd.DataFrame(rows)
 
-                        left = load * a * (3 * L**2 - 4 * a**2) / (48 * E * I)
-                        z = L - a
-                        right = load * z * (3 * L**2 - 4 * z**2) / (48 * E * I)
+            # Save one CSV for this beam type
+            filename = "outputs/" + name + ".csv"
+            df.to_csv(filename, index=False)
 
-                        checks.append((
-                            name + " continuity",
-                            abs(left - right) < 1e-12
-                        ))
+            print("Saved:", filename)
 
-                    elif name == "ss_off_center_point":
-                        a = fraction * L
-                        b = L - a
+        print("\nAll CSV files generated successfully.")
+        create_plots(config)
 
-                        left = load * b * a * (L**2 - b**2 - a**2) / (6 * L * E * I)
-                        right = load * a * b * (L**2 - a**2 - b**2) / (6 * L * E * I)
-
-                        checks.append((
-                            name + " continuity",
-                            abs(left - right) < 1e-12
-                        ))
+        print("All plots generated successfully.")
 
         
-        with open("results.csv", "w", newline="") as file:
-            columns = [
-                "beam_type",
-                "span_m",
-                "load_value",
-                "load_unit",
-                "max_deflection_m"
-            ]
-
-            writer = csv.DictWriter(file, fieldnames=columns)
-            writer.writeheader()
-            writer.writerows(results)
-
-        print("Results saved to results.csv")
-        print("Total cases:", len(results))
-
         
-        with open("results.csv", "r", newline="") as file:
-            reader = csv.DictReader(file)
-            saved_results = list(reader)
-
-        
-        print("\nLargest deflection for each beam type:")
-
-        for name in beam_cases:
-            largest = None
-
-            for row in saved_results:
-                if row["beam_type"] == name:
-                    if largest is None:
-                        largest = row
-                    elif float(row["max_deflection_m"]) > float(
-                        largest["max_deflection_m"]
-                    ):
-                        largest = row
-
-            if largest is not None:
-                print(
-                    name,
-                    "| span:", largest["span_m"], "m",
-                    "| load:", largest["load_value"],
-                    largest["load_unit"],
-                    "| deflection:", largest["max_deflection_m"], "m"
-                )
-
-        
-        print("\nSelf-checks:")
-
-        failed = False
-
-        for name, passed in checks:
-            if passed:
-                print(name, ": PASS")
-            else:
-                print(name, ": FAIL")
-                failed = True
-
-        if failed:
-            print("Some checks failed.")
-        else:
-            print("All checks passed.")
 
     except FileNotFoundError:
         print("Error: Configuration file not found.")
